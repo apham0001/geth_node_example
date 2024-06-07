@@ -1,0 +1,64 @@
+global:
+  fullnameOverride: geth-node
+
+controllers:
+  node:
+    enabled: true
+    type: statefulset
+    replicas: 1
+
+    statefulset:
+      volumeClaimTemplates:
+        - name: data
+          accessMode: "ReadWriteOnce"
+          size: 10Gi
+          storageClass: standard
+
+    containers:
+      geth:
+        image: 
+          repository: ethereum/client-go
+          tag: stable 
+          pullPolicy: Always
+        command: ["geth"]
+        args: ["--datadir=/data", "--holesky", "--http", "--http.api=eth,net,engine,admin", "--authrpc.jwtsecret=/data/jwtsecret"]
+      prysm:
+        image:
+          repository: gcr.io/prysmaticlabs/prysm/beacon-chain
+          tag: stable
+          pullPolicy: Always
+        args: ["--datadir=/data", "--holesky", "--execution-endpoint=http://localhost:8551", "--jwt-secret=/data/jwtsecret", "--accept-terms-of-use", "--checkpoint-sync-url=https://holesky.beaconstate.info", "--genesis-beacon-api-url=https://holesky.beaconstate.info"]
+    initContainers:
+      init:
+        image:
+          repository: alpine
+          tag: latest
+        command:
+          - /bin/sh
+          - -c
+          - |
+            apk update && apk add --no-cache openssl
+            if [ ! -f /data/jwtsecret ]; then
+              openssl rand -hex 32 | tr -d "\n" > /data/jwtsecret
+            else
+              echo "jwtsecret already exists, skipping creation"
+            fi
+
+service:
+  node:
+    enabled: true
+    controller: node
+    type: ClusterIP
+    ports:
+      rpc:
+        enabled: true
+        port: 8545
+        protocol: TCP
+
+persistence:
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    retain: true
